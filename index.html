@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>PA#1 - Anaglyph & Webcam</title>
+    <style>
+      body {
+        background-color: #eeeeee;
+        font-family: sans-serif;
+      }
+      .controls {
+        display: grid;
+        grid-template-columns: 200px 300px;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      canvas {
+        background-color: black;
+        display: block;
+      }
+    </style>
+    <script src="./Utils/trackball-rotator.js"></script>
+    <script src="./Utils/m4.js"></script>
+    <script src="./shader.gpu"></script>
+    <script src="./model.js"></script>
+    <script src="./StereoCamera.js"></script>
+    <script src="./main.js"></script>
+  </head>
+  <body onload="init()">
+    <div class="controls">
+      <label>Eye Separation:</label>
+      <input type="range" id="eyeSep" min="0" max="2" step="0.01" value="0.7" />
+      <label>Field of View (deg):</label>
+      <input type="range" id="fov" min="10" max="120" step="1" value="60" />
+      <label>Near Clipping:</label>
+      <input type="range" id="near" min="1" max="15" step="0.1" value="8.0" />
+      <label>Convergence:</label>
+      <input type="range" id="conv" min="5" max="30" step="0.5" value="14.0" />
+    </div>
+    <div id="canvas-holder">
+      <canvas width="600" height="600" id="webglcanvas"></canvas>
+    </div>
+    <p>Drag to rotate. Uses Red-Cyan anaglyph glasses.</p>
+  </body>
+</html>
