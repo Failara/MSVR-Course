@@ -12,7 +12,6 @@ function init() {
   initWebcam();
   spaceball = new TrackballRotator(canvas, draw, 0);
 
-  // UI Listeners
   ["eyeSep", "fov", "near", "conv"].forEach((id) => {
     document.getElementById(id).addEventListener("input", () => {
       updateStereoParams();
@@ -51,10 +50,10 @@ function updateStereoParams() {
   stereoCam = new StereoCamera(
     parseFloat(document.getElementById("eyeSep").value),
     parseFloat(document.getElementById("conv").value),
-    1.0, // Aspect Ratio
+    1.0,
     deg2rad(parseFloat(document.getElementById("fov").value)),
     parseFloat(document.getElementById("near").value),
-    100.0, // Far clipping
+    100.0,
   );
 }
 
@@ -81,7 +80,6 @@ function draw() {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.useProgram(shProgram.prog);
 
-  // 1. Draw Webcam (Zero Parallax Plane)
   if (webcamTexture && video.readyState >= video.HAVE_CURRENT_DATA) {
     gl.bindTexture(gl.TEXTURE_2D, webcamTexture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
@@ -101,11 +99,9 @@ function draw() {
     modelView,
   );
 
-  // Left Eye (Red)
   gl.colorMask(true, false, false, true);
   renderSide(true, world);
 
-  // Right Eye (Cyan)
   gl.clear(gl.DEPTH_BUFFER_BIT);
   gl.colorMask(false, true, true, true);
   renderSide(false, world);
@@ -115,7 +111,6 @@ function draw() {
 
 function renderSide(isLeft, world) {
   let projection = stereoCam.calcFrustum(isLeft);
-  // Apply eye separation translation
   let eyeTranslation = m4.translation(
     isLeft ? stereoCam.eyeSeparation / 2 : -stereoCam.eyeSeparation / 2,
     0,
@@ -125,14 +120,12 @@ function renderSide(isLeft, world) {
 
   gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, mvp);
 
-  // Fill
   gl.uniform4fv(shProgram.iColor, [0.2, 0.2, 0.2, 1]);
   gl.enable(gl.POLYGON_OFFSET_FILL);
   gl.polygonOffset(1, 1);
   surface.Draw();
   gl.disable(gl.POLYGON_OFFSET_FILL);
 
-  // Wireframe
   gl.uniform4fv(shProgram.iColor, [1, 1, 1, 1]);
   surface.DrawWireframe();
 }

@@ -18,7 +18,6 @@ function StereoCamera(
     let bottom = -top;
     let a = this.aspectRatio * Math.tan(this.fov / 2) * this.convergence;
 
-    // Offset for parallax
     let offset = (this.eyeSeparation / 2) * (isLeft ? 1 : -1);
 
     let left = (-(a - offset) * this.near) / this.convergence;

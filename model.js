@@ -62,7 +62,6 @@ function Model(name) {
   };
 }
 
-// Logic for your Neovius Surface remains largely the same but returns the object
 function calculateSurfacePoint(u, v, isUpperHemisphere = true) {
   const cosU = Math.cos(u);
   const cosV = Math.cos(v);
