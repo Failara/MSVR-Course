@@ -2,6 +2,8 @@
 
 let gl, surface, surfaceCam, shProgram, spaceball, stereoCam;
 let video, webcamTexture;
+let socket = null;
+let sensorRotationMatrix = m4.identity();
 
 function init() {
   let canvas = document.getElementById("webglcanvas");
@@ -20,6 +22,61 @@ function init() {
   });
 
   requestAnimationFrame(renderLoop);
+}
+
+function connectSensor() {
+  const ip = document.getElementById("ipAddr").value;
+  const status = document.getElementById("status");
+
+  if (socket) socket.close();
+
+  socket = new WebSocket(
+    `ws://${ip}/sensor/connect?type=android.sensor.magnetic_field`,
+  );
+
+  socket.onopen = () => {
+    status.innerText = "Connected";
+    status.style.color = "green";
+  };
+
+  socket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.values) {
+      updateRotationFromMagnetometer(data.values);
+    }
+  };
+
+  socket.onerror = () => {
+    status.innerText = "Connection Error";
+    status.style.color = "red";
+  };
+}
+
+function updateRotationFromMagnetometer(values) {
+  let mag = m4.normalize([values[0], values[1], values[2]]);
+
+  let up = [0, 1, 0];
+  let xAxis = m4.normalize(m4.cross(up, mag));
+  let yAxis = m4.normalize(m4.cross(mag, xAxis));
+
+  sensorRotationMatrix = [
+    xAxis[0],
+    xAxis[1],
+    xAxis[2],
+    0,
+    yAxis[0],
+    yAxis[1],
+    yAxis[2],
+    0,
+    mag[0],
+    mag[1],
+    mag[2],
+    0,
+    0,
+    0,
+    0,
+    1,
+  ];
 }
 
 function initGL() {
@@ -93,10 +150,13 @@ function draw() {
   }
 
   gl.uniform1i(shProgram.uUseTexture, 0);
+
   let modelView = spaceball.getViewMatrix();
+  let combinedRotation = m4.multiply(modelView, sensorRotationMatrix);
+
   let world = m4.multiply(
     m4.translation(0, 0, -stereoCam.convergence),
-    modelView,
+    combinedRotation,
   );
 
   gl.colorMask(true, false, false, true);
@@ -119,7 +179,6 @@ function renderSide(isLeft, world) {
   let mvp = m4.multiply(projection, m4.multiply(eyeTranslation, world));
 
   gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, mvp);
-
   gl.uniform4fv(shProgram.iColor, [0.2, 0.2, 0.2, 1]);
   gl.enable(gl.POLYGON_OFFSET_FILL);
   gl.polygonOffset(1, 1);
