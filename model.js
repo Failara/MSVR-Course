@@ -1,4 +1,5 @@
 "use strict";
+
 function Model(name) {
   this.name = name;
   this.iVertexBuffer = gl.createBuffer();
@@ -14,7 +15,7 @@ function Model(name) {
       gl.STATIC_DRAW,
     );
 
-    if (data.texCoords) {
+    if (data.texCoords && data.texCoords.length > 0) {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.iTexBuffer);
       gl.bufferData(
         gl.ARRAY_BUFFER,
@@ -73,7 +74,7 @@ function calculateSurfacePoint(u, v, isUpperHemisphere = true) {
 }
 
 function CreateSurfaceData() {
-  const data = { vertexList: [], indexList: [] };
+  const data = { vertexList: [], indexList: [], texCoords: [] };
   const steps = 30;
   const range = Math.PI;
 
@@ -85,6 +86,7 @@ function CreateSurfaceData() {
         let v = -range + (i / steps) * 2 * range;
         let p = calculateSurfacePoint(u, v, isUpper);
         data.vertexList.push(p.x, p.y, p.z);
+        data.texCoords.push(j / steps, i / steps);
       }
     }
     for (let i = 0; i < steps; i++) {
@@ -97,6 +99,40 @@ function CreateSurfaceData() {
   }
   generate(true);
   generate(false);
+  return data;
+}
+
+function CreateSphereData(radius, latBands, longBands) {
+  const data = { vertexList: [], indexList: [], texCoords: [] };
+
+  for (let latNumber = 0; latNumber <= latBands; latNumber++) {
+    let theta = (latNumber * Math.PI) / latBands;
+    let sinTheta = Math.sin(theta);
+    let cosTheta = Math.cos(theta);
+
+    for (let longNumber = 0; longNumber <= longBands; longNumber++) {
+      let phi = (longNumber * 2 * Math.PI) / longBands;
+      let sinPhi = Math.sin(phi);
+      let cosPhi = Math.cos(phi);
+
+      let x = cosPhi * sinTheta;
+      let y = cosTheta;
+      let z = sinPhi * sinTheta;
+
+      data.vertexList.push(radius * x, radius * y, radius * z);
+      data.texCoords.push(1 - longNumber / longBands, 1 - latNumber / latBands);
+    }
+  }
+
+  for (let latNumber = 0; latNumber < latBands; latNumber++) {
+    for (let longNumber = 0; longNumber < longBands; longNumber++) {
+      let first = latNumber * (longBands + 1) + longNumber;
+      let second = first + longBands + 1;
+
+      data.indexList.push(first, second, first + 1);
+      data.indexList.push(second, second + 1, first + 1);
+    }
+  }
   return data;
 }
 

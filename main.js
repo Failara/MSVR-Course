@@ -1,9 +1,13 @@
 "use strict";
 
-let gl, surface, surfaceCam, shProgram, spaceball, stereoCam;
+let gl, surface, surfaceCam, soundSphere, shProgram, spaceball, stereoCam;
 let video, webcamTexture;
 let socket = null;
 let sensorRotationMatrix = m4.identity();
+
+let audioCtx, panner, filter, source, audioBuffer;
+let isPlaying = false;
+let filterEnabled = false;
 
 function init() {
   let canvas = document.getElementById("webglcanvas");
@@ -22,6 +26,85 @@ function init() {
   });
 
   requestAnimationFrame(renderLoop);
+}
+
+async function initAudio() {
+  if (audioCtx) return;
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  panner = audioCtx.createPanner();
+  panner.panningModel = "HRTF";
+  panner.distanceModel = "inverse";
+  panner.refDistance = 1;
+  panner.maxDistance = 10000;
+  panner.rolloffFactor = 1;
+
+  filter = audioCtx.createBiquadFilter();
+  filter.type = "notch";
+  filter.frequency.value = Number(document.getElementById("notchFreq").value);
+  filter.Q.value = 1;
+
+  const response = await fetch("./music.mp3");
+  const arrayBuffer = await response.arrayBuffer();
+  audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+}
+
+function playAudio() {
+  if (!audioCtx) {
+    initAudio().then(togglePlayback);
+  } else {
+    togglePlayback();
+  }
+}
+
+function togglePlayback() {
+  const btn = document.getElementById("playBtn");
+
+  if (audioCtx.state === "running" && isPlaying) {
+    audioCtx.suspend();
+    isPlaying = false;
+    btn.innerText = "Play Music";
+  } else if (audioCtx.state === "suspended" && !isPlaying) {
+    audioCtx.resume();
+    isPlaying = true;
+    btn.innerText = "Pause Music";
+  } else if (!isPlaying) {
+    source = audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.loop = true;
+
+    updateAudioGraph();
+    source.start(0);
+    isPlaying = true;
+    btn.innerText = "Pause Music";
+  }
+}
+
+function toggleFilter(useFilter) {
+  filterEnabled = useFilter;
+  updateAudioGraph();
+}
+
+function updateNotchFreq(value) {
+  if (filter && audioCtx) {
+    filter.frequency.setTargetAtTime(Number(value), audioCtx.currentTime, 0.05);
+  }
+}
+
+function updateAudioGraph() {
+  if (!panner || !source) return;
+  source.disconnect();
+  panner.disconnect();
+  filter.disconnect();
+
+  source.connect(panner);
+  if (filterEnabled) {
+    panner.connect(filter);
+    filter.connect(audioCtx.destination);
+  } else {
+    panner.connect(audioCtx.destination);
+  }
 }
 
 function connectSensor() {
@@ -99,6 +182,9 @@ function initGL() {
   surfaceCam = new Model("WebcamQuad");
   surfaceCam.BufferData(CreateWebcamRectData());
 
+  soundSphere = new Model("SoundSphere");
+  soundSphere.BufferData(CreateSphereData(0.5, 20, 20));
+
   updateStereoParams();
   gl.enable(gl.DEPTH_TEST);
 }
@@ -117,15 +203,20 @@ function updateStereoParams() {
 function initWebcam() {
   video = document.createElement("video");
   video.autoplay = true;
-  navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
-    video.srcObject = stream;
-    video.play();
-    webcamTexture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, webcamTexture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  });
+  navigator.mediaDevices
+    .getUserMedia({ video: true })
+    .then((stream) => {
+      video.srcObject = stream;
+      video.play();
+      webcamTexture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, webcamTexture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    })
+    .catch(() => {
+      console.log("Webcam access denied or unavailable.");
+    });
 }
 
 function renderLoop() {
@@ -154,39 +245,64 @@ function draw() {
   let modelView = spaceball.getViewMatrix();
   let combinedRotation = m4.multiply(modelView, sensorRotationMatrix);
 
-  let world = m4.multiply(
-    m4.translation(0, 0, -stereoCam.convergence),
-    combinedRotation,
+  let surfaceWorld = m4.translation(0, 0, -stereoCam.convergence);
+
+  let soundLocalRotation = m4.multiply(m4.identity(), combinedRotation);
+  let orbitRadiusTransform = m4.translation(4, 0, 0);
+  let soundPositionLocal = m4.multiply(
+    soundLocalRotation,
+    orbitRadiusTransform,
   );
 
+  let soundWorld = m4.multiply(surfaceWorld, soundPositionLocal);
+
+  let localPos = m4.transformPoint(soundPositionLocal, [0, 0, 0]);
+  if (panner && audioCtx) {
+    panner.positionX.value = localPos[0];
+    panner.positionY.value = localPos[1];
+    panner.positionZ.value = localPos[2];
+  }
+
   gl.colorMask(true, false, false, true);
-  renderSide(true, world);
+  renderSide(true, surfaceWorld, soundWorld);
 
   gl.clear(gl.DEPTH_BUFFER_BIT);
   gl.colorMask(false, true, true, true);
-  renderSide(false, world);
+  renderSide(false, surfaceWorld, soundWorld);
 
   gl.colorMask(true, true, true, true);
 }
 
-function renderSide(isLeft, world) {
+function renderSide(isLeft, surfaceWorld, soundWorld) {
   let projection = stereoCam.calcFrustum(isLeft);
   let eyeTranslation = m4.translation(
     isLeft ? stereoCam.eyeSeparation / 2 : -stereoCam.eyeSeparation / 2,
     0,
     0,
   );
-  let mvp = m4.multiply(projection, m4.multiply(eyeTranslation, world));
 
-  gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, mvp);
+  let mvpSurface = m4.multiply(
+    projection,
+    m4.multiply(eyeTranslation, surfaceWorld),
+  );
+  gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, mvpSurface);
   gl.uniform4fv(shProgram.iColor, [0.2, 0.2, 0.2, 1]);
   gl.enable(gl.POLYGON_OFFSET_FILL);
   gl.polygonOffset(1, 1);
   surface.Draw();
   gl.disable(gl.POLYGON_OFFSET_FILL);
-
   gl.uniform4fv(shProgram.iColor, [1, 1, 1, 1]);
   surface.DrawWireframe();
+
+  let mvpSound = m4.multiply(
+    projection,
+    m4.multiply(eyeTranslation, soundWorld),
+  );
+  gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, mvpSound);
+  gl.uniform4fv(shProgram.iColor, [1.0, 0.3, 0.0, 1]);
+  soundSphere.Draw();
+  gl.uniform4fv(shProgram.iColor, [1, 1, 1, 1]);
+  soundSphere.DrawWireframe();
 }
 
 function createProgram(gl, vShader, fShader) {
